@@ -115,4 +115,40 @@ test.describe('Flow-Forge MVP E2E (CUJ 1 - CUJ 4)', () => {
     await expect(page.getByTestId('import-modal')).toBeHidden();
     await expect(page.getByTestId('project-selector')).toContainText('(Cópia)');
   });
+
+  test('UX: Create project via native <dialog>, connect nodes via Inspector quick-connect & toggle theme', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.getByTestId('welcome-new-project').click();
+    await expect(page.getByTestId('new-project-modal')).toBeVisible();
+
+    await page.getByTestId('new-project-name-input').fill('Sistema Teste UX');
+    await page.getByTestId('new-project-submit').click();
+    await expect(page.getByTestId('new-project-modal')).toBeHidden();
+
+    // Add 2 nodes -> connection hint appears
+    await page.getByTestId('palette-system-service').click();
+    await page.getByTestId('palette-system-database').click();
+    await expect(page.getByTestId('connection-hint')).toBeVisible();
+
+    // Select the service node -> connect to database via Inspector quick-connect
+    await page.locator('[data-kind="service"]').first().click();
+    await expect(page.getByTestId('quick-connect-box')).toBeVisible();
+    const dbOptionValue = await page
+      .locator('[data-testid="quick-connect-target"] option')
+      .nth(1)
+      .getAttribute('value');
+    await page.getByTestId('quick-connect-target').selectOption(dbOptionValue!);
+    await page.getByTestId('quick-connect-btn').click();
+
+    // Edge created -> connection hint disappears
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1);
+    await expect(page.getByTestId('connection-hint')).toHaveCount(0);
+
+    // Toggle theme updates <meta name="color-scheme">
+    await page.getByTestId('btn-theme-toggle').click();
+    const scheme = await page.locator('meta[name="color-scheme"]').getAttribute('content');
+    expect(scheme === 'dark' || scheme === 'light').toBe(true);
+  });
 });

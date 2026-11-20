@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import type { CodeUnitKind, EntityId, Point2D, SystemNodeKind } from '@domain/types';
+import {
+  AlertTriangle,
+  ArrowRight,
+  FolderKanban,
+  Layers,
+  Plus,
+  Sparkles,
+  X,
+} from 'lucide-vue-next';
+import type { CodeUnitKind, EntityId, Point2D, RuleProfileId, SystemNodeKind } from '@domain/types';
+import { BUILTIN_EXAMPLES } from '@examples/index';
 import type { Diagnostic } from '@rules/types';
 import { inferConnectionDefaults, useWorkspace } from './composables/useWorkspace';
 import ArchitectureCanvas from './components/ArchitectureCanvas.vue';
@@ -8,10 +18,14 @@ import DiagnosticsPanel from './components/DiagnosticsPanel.vue';
 import ElementPalette from './components/ElementPalette.vue';
 import ImportConflictModal from './components/ImportConflictModal.vue';
 import InspectorPanel from './components/InspectorPanel.vue';
+import NewProjectModal from './components/NewProjectModal.vue';
 import TopBar from './components/TopBar.vue';
 
 const ws = useWorkspace();
 const canvasRef = ref<InstanceType<typeof ArchitectureCanvas> | null>(null);
+const showNewProjectModal = ref(false);
+const showPalette = ref(true);
+const showInspector = ref(true);
 
 function triggerDownload(fileName: string, content: string): void {
   const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
@@ -21,6 +35,11 @@ function triggerDownload(fileName: string, content: string): void {
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+async function handleCreateProjectSubmit(name: string, ruleProfile: RuleProfileId): Promise<void> {
+  showNewProjectModal.value = false;
+  await ws.createNewProject(name, ruleProfile);
 }
 
 function handleAddSystemNode(kind: SystemNodeKind, defaultName: string): void {
@@ -101,6 +120,7 @@ function handleNodeSelected(nodeId: EntityId): void {
     ws.activeScope.value.level === 'system'
       ? { kind: 'system-node', id: nodeId }
       : { kind: 'code-unit', id: nodeId };
+  showInspector.value = true;
 }
 
 function handleEdgeSelected(edgeId: EntityId): void {
@@ -108,6 +128,7 @@ function handleEdgeSelected(edgeId: EntityId): void {
     ws.activeScope.value.level === 'system'
       ? { kind: 'runtime-connection', id: edgeId }
       : { kind: 'static-dependency', id: edgeId };
+  showInspector.value = true;
 }
 
 function handleDeleteShortcut(): void {
@@ -169,6 +190,9 @@ function handleSelectDiagnostic(diag: Diagnostic): void {
 }
 
 onMounted(() => {
+  if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+    showPalette.value = false;
+  }
   void ws.init();
 });
 </script>
@@ -185,7 +209,9 @@ onMounted(() => {
       :unexported-changes-flag="ws.unexportedChangesFlag.value"
       :is-saving="ws.isSaving.value"
       :recovery-banner="ws.recoveryBanner.value"
-      @create-project="ws.createNewProject"
+      :show-palette="showPalette"
+      :show-inspector="showInspector"
+      @open-new-project="showNewProjectModal = true"
       @open-project="ws.openExistingProject"
       @open-example="ws.openExample"
       @delete-project="ws.deleteActiveProject"
@@ -201,16 +227,24 @@ onMounted(() => {
       @export-diagnostics="handleExportDiagnostics"
       @reload-from-db="ws.reloadFromIndexedDb"
       @download-emergency-json="handleDownloadEmergencyJson"
+      @toggle-palette="showPalette = !showPalette"
+      @toggle-inspector="showInspector = !showInspector"
     />
 
     <div v-if="ws.lastError.value" class="ff-toast-error" role="alert">
-      <span>{{ ws.lastError.value }}</span>
-      <button @click="ws.lastError.value = null">×</button>
+      <span class="ff-toast-error__msg">
+        <AlertTriangle :size="15" />
+        {{ ws.lastError.value }}
+      </span>
+      <button type="button" class="ghost icon-btn" aria-label="Fechar aviso" @click="ws.lastError.value = null">
+        <X :size="14" />
+      </button>
     </div>
 
     <div v-if="ws.project.value" class="ff-workspace">
       <div class="ff-workspace__main">
         <ElementPalette
+          v-if="showPalette"
           :active-scope="ws.activeScope.value"
           @add-system-node="handleAddSystemNode"
           @add-code-unit="handleAddCodeUnit"
@@ -234,6 +268,7 @@ onMounted(() => {
         />
 
         <InspectorPanel
+          v-if="showInspector"
           :project="ws.project.value"
           :active-scope="ws.activeScope.value"
           :selected-element="ws.selectedElement.value"
@@ -252,35 +287,95 @@ onMounted(() => {
     </div>
 
     <section v-else class="ff-welcome" data-testid="empty-welcome">
-      <div class="ff-welcome__card">
-        <h1>Flow-Forge</h1>
-        <p>
-          Modelagem visual multinível e validação arquitetural determinística (<em>local-first</em>,
-          diretamente no navegador).
-        </p>
-        <div class="ff-welcome__actions">
-          <button
-            class="primary"
-            data-testid="welcome-new-project"
-            @click="ws.createNewProject('Meu Sistema')"
-          >
-            Novo Projeto
-          </button>
-          <button
-            data-testid="welcome-open-example"
-            @click="ws.openExample('hexagonal-orders-valid')"
-          >
-            Abrir Exemplo (Pedidos Hexagonal)
-          </button>
-          <button
-            data-testid="welcome-open-defective"
-            @click="ws.openExample('hexagonal-orders-defective')"
-          >
-            Abrir Exemplo com Defeitos
-          </button>
+      <div class="ff-welcome__container">
+        <div class="ff-welcome__hero">
+          <div class="ff-welcome__badge">
+            <Layers :size="14" />
+            <span>Local-First Architecture Studio</span>
+          </div>
+          <h1>Flow-Forge</h1>
+          <p>
+            Modele topologias distribuídas e arquiteturas internas em dois níveis integrados com
+            validação estrutural determinística — 100% no navegador.
+          </p>
+          <div class="ff-welcome__cta">
+            <button
+              type="button"
+              class="primary ff-btn-lg"
+              data-testid="welcome-new-project"
+              @click="showNewProjectModal = true"
+            >
+              <Plus :size="16" />
+              Novo Projeto
+            </button>
+            <button
+              type="button"
+              class="ff-btn-lg"
+              data-testid="welcome-open-example"
+              @click="ws.openExample('hexagonal-orders-valid')"
+            >
+              <Sparkles :size="15" />
+              Abrir Exemplo (Pedidos Hexagonal)
+            </button>
+            <button
+              type="button"
+              class="ff-btn-lg"
+              data-testid="welcome-open-defective"
+              @click="ws.openExample('hexagonal-orders-defective')"
+            >
+              Abrir Exemplo com Defeitos
+            </button>
+          </div>
+        </div>
+
+        <div v-if="ws.projectSummaries.value.length > 0" class="ff-welcome__section">
+          <h3>
+            <FolderKanban :size="15" />
+            Projetos Salvos Localmente
+          </h3>
+          <div class="ff-card-grid">
+            <button
+              v-for="summary in ws.projectSummaries.value"
+              :key="summary.id"
+              type="button"
+              class="ff-welcome-card"
+              @click="ws.openExistingProject(summary.id)"
+            >
+              <strong>{{ summary.name }}</strong>
+              <small>Revisão {{ summary.persistedRevision }}</small>
+            </button>
+          </div>
+        </div>
+
+        <div class="ff-welcome__section">
+          <h3>
+            <Sparkles :size="15" />
+            Modelos de Referência Prontos
+          </h3>
+          <div class="ff-card-grid">
+            <button
+              v-for="ex in BUILTIN_EXAMPLES"
+              :key="ex.id"
+              type="button"
+              class="ff-welcome-card"
+              @click="ws.openExample(ex.id)"
+            >
+              <div class="ff-welcome-card__head">
+                <strong>{{ ex.title }}</strong>
+                <ArrowRight :size="14" class="ff-welcome-card__arrow" />
+              </div>
+              <p>{{ ex.description }}</p>
+            </button>
+          </div>
         </div>
       </div>
     </section>
+
+    <NewProjectModal
+      :open="showNewProjectModal"
+      @close="showNewProjectModal = false"
+      @submit="handleCreateProjectSubmit"
+    />
 
     <ImportConflictModal
       :state="ws.importModal.value"
@@ -302,11 +397,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 14px;
+  padding: 7px 14px;
   background: var(--ff-error-bg);
   color: var(--ff-error);
-  border-bottom: 1px solid #fecaca;
-  font-size: 12px;
+  border-bottom: 1px solid var(--ff-error-border);
+  font-size: 12.5px;
+}
+
+.ff-toast-error__msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .ff-workspace {
@@ -320,42 +421,132 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
   display: flex;
+  position: relative;
 }
 
 .ff-welcome {
   flex: 1;
+  overflow-y: auto;
+  padding: 36px 24px 48px;
   display: flex;
-  align-items: center;
   justify-content: center;
-  padding: 24px;
 }
 
-.ff-welcome__card {
+.ff-welcome__container {
+  width: 100%;
+  max-width: 920px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.ff-welcome__hero {
   background: var(--ff-surface);
   border: 1px solid var(--ff-border);
-  border-radius: 12px;
-  padding: 28px 32px;
-  max-width: 520px;
+  border-radius: var(--ff-radius-lg);
+  padding: 32px;
   text-align: center;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--ff-shadow-md);
 }
 
-.ff-welcome__card h1 {
+.ff-welcome__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ff-primary-text);
+  background: var(--ff-primary-soft);
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+
+.ff-welcome__hero h1 {
   margin: 0 0 8px;
-  color: var(--ff-primary);
+  font-size: 28px;
+  letter-spacing: -0.02em;
 }
 
-.ff-welcome__card p {
-  margin: 0 0 20px;
+.ff-welcome__hero p {
+  margin: 0 auto 22px;
+  max-width: 600px;
   color: var(--ff-muted);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 14.5px;
+  line-height: 1.55;
 }
 
-.ff-welcome__actions {
+.ff-welcome__cta {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
+}
+
+.ff-btn-lg {
+  padding: 9px 16px;
+  font-size: 13.5px;
+  border-radius: 8px;
+}
+
+.ff-welcome__section h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ff-muted);
+}
+
+.ff-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.ff-welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 6px;
+  padding: 16px;
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  box-shadow: var(--ff-shadow-sm);
+}
+
+.ff-welcome-card:hover {
+  border-color: var(--ff-primary);
+  box-shadow: var(--ff-shadow-md);
+}
+
+.ff-welcome-card__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ff-welcome-card__arrow {
+  color: var(--ff-muted);
+  flex-shrink: 0;
+}
+
+.ff-welcome-card p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ff-muted);
+  line-height: 1.45;
+}
+
+.ff-welcome-card small {
+  color: var(--ff-muted);
+  font-size: 11.5px;
 }
 </style>

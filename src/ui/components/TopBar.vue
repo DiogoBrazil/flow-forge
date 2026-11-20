@@ -1,9 +1,29 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import {
+  AlertTriangle,
+  ChevronRight,
+  Download,
+  FileJson2,
+  Layers,
+  LayoutGrid,
+  Moon,
+  PanelLeft,
+  PanelRight,
+  Plus,
+  Redo2,
+  Sun,
+  Terminal,
+  Trash2,
+  Undo2,
+  Upload,
+} from 'lucide-vue-next';
 import type { ProjectSummary } from '@application/ports/ProjectRepository';
 import type { ArchitectureProject, EntityId, RuleProfileId, ViewScope } from '@domain/types';
 import { BUILTIN_EXAMPLES } from '@examples/index';
+import { useColorScheme } from '../composables/useColorScheme';
 import type { RecoveryBannerState } from '../composables/useWorkspace';
+import AppDialog from './AppDialog.vue';
 
 const props = defineProps<{
   project: ArchitectureProject | null;
@@ -15,10 +35,12 @@ const props = defineProps<{
   unexportedChangesFlag: boolean;
   isSaving: boolean;
   recoveryBanner: RecoveryBannerState | null;
+  showPalette: boolean;
+  showInspector: boolean;
 }>();
 
 const emit = defineEmits<{
-  createProject: [name: string];
+  openNewProject: [];
   openProject: [id: EntityId];
   openExample: [exampleId: string];
   deleteProject: [];
@@ -32,10 +54,15 @@ const emit = defineEmits<{
   exportDiagnostics: [includeProject: boolean];
   reloadFromDb: [];
   downloadEmergencyJson: [];
+  togglePalette: [];
+  toggleInspector: [];
 }>();
+
+const { resolvedScheme, toggleColorScheme } = useColorScheme();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const showDiagModal = ref(false);
+const showDeleteModal = ref(false);
 const includeProjectInDiag = ref(false);
 
 function getActiveServiceName(): string {
@@ -76,44 +103,65 @@ function handleFileChosen(event: Event): void {
   }
 }
 
-function handleCreatePrompt(): void {
-  const name = window.prompt('Nome do novo projeto:', 'Novo Sistema');
-  if (name !== null && name.trim().length > 0) {
-    emit('createProject', name.trim());
-  }
-}
-
 function confirmExportDiagnostics(): void {
   emit('exportDiagnostics', includeProjectInDiag.value);
   showDiagModal.value = false;
   includeProjectInDiag.value = false;
+}
+
+function confirmDeleteProject(): void {
+  showDeleteModal.value = false;
+  emit('deleteProject');
 }
 </script>
 
 <template>
   <header class="ff-topbar">
     <div class="ff-topbar__row">
+      <!-- Left: Brand + Project Switcher -->
       <div class="ff-topbar__group">
-        <strong class="ff-brand">Flow-Forge</strong>
+        <div class="ff-brand">
+          <span class="ff-brand__mark">
+            <Layers :size="16" />
+          </span>
+          <strong>Flow-Forge</strong>
+        </div>
+
+        <button
+          v-if="project"
+          type="button"
+          class="ghost icon-btn"
+          :class="{ 'is-active': showPalette }"
+          title="Alternar paleta lateral"
+          aria-label="Alternar paleta lateral"
+          @click="emit('togglePalette')"
+        >
+          <PanelLeft :size="16" />
+        </button>
 
         <select
           v-if="projectSummaries.length > 0"
           aria-label="Selecionar projeto local"
           data-testid="project-selector"
+          class="ff-select-compact"
           :value="project?.id ?? ''"
           @change="handleProjectSelect"
         >
-          <option v-if="!project" value="">Selecione um projeto…</option>
+          <option v-if="!project" value="">Projetos locais…</option>
           <option v-for="summary in projectSummaries" :key="summary.id" :value="summary.id">
             {{ summary.name }}
           </option>
         </select>
 
-        <button data-testid="btn-new-project" @click="handleCreatePrompt">+ Novo</button>
+        <button type="button" data-testid="btn-new-project" @click="emit('openNewProject')">
+          <Plus :size="14" />
+          <span class="ff-hide-sm">Novo</span>
+        </button>
 
         <select
           aria-label="Abrir modelo de exemplo"
           data-testid="example-selector"
+          class="ff-select-compact"
           @change="handleExampleSelect"
         >
           <option value="">Exemplos…</option>
@@ -123,8 +171,10 @@ function confirmExportDiagnostics(): void {
         </select>
       </div>
 
+      <!-- Center: Hierarchical Breadcrumbs -->
       <nav v-if="project" class="ff-breadcrumbs" aria-label="Navegação hierárquica">
         <button
+          type="button"
           class="ff-crumb"
           :class="{ active: activeScope.level === 'system' }"
           data-testid="breadcrumb-system"
@@ -133,65 +183,143 @@ function confirmExportDiagnostics(): void {
           Topologia
         </button>
         <template v-if="activeScope.level === 'internal'">
-          <span class="ff-crumb-sep">&gt;</span>
+          <ChevronRight :size="14" class="ff-crumb-sep" />
           <span class="ff-crumb active" data-testid="breadcrumb-service">
             {{ getActiveServiceName() }}
           </span>
         </template>
       </nav>
 
-      <div v-if="project" class="ff-topbar__group">
-        <label class="ff-inline-label">
-          Perfil:
+      <!-- Right: Workspace Actions + Theme Toggle -->
+      <div class="ff-topbar__group">
+        <template v-if="project">
           <select
+            aria-label="Perfil de regras arquiteturais"
             data-testid="rule-profile-select"
+            class="ff-select-compact"
             :value="project.ruleProfile"
             @change="handleProfileChange"
           >
             <option value="hexagonal">Hexagonal</option>
-            <option value="layered">Camadas (Layered)</option>
-            <option value="distributed-baseline">Baseline Distribuído</option>
+            <option value="layered">Camadas</option>
+            <option value="distributed-baseline">Baseline</option>
           </select>
-        </label>
 
-        <button :disabled="!canUndo" data-testid="btn-undo" title="Desfazer (Ctrl+Z)" @click="emit('undo')">
-          ↶ Undo
-        </button>
-        <button
-          :disabled="!canRedo"
-          data-testid="btn-redo"
-          title="Refazer (Ctrl+Shift+Z)"
-          @click="emit('redo')"
-        >
-          ↷ Redo
-        </button>
-        <button data-testid="btn-layout" @click="emit('applyLayout')">Organizar layout</button>
+          <div class="ff-btn-group">
+            <button
+              type="button"
+              class="icon-btn"
+              :disabled="!canUndo"
+              data-testid="btn-undo"
+              title="Desfazer (Ctrl+Z)"
+              aria-label="Desfazer"
+              @click="emit('undo')"
+            >
+              <Undo2 :size="15" />
+            </button>
+            <button
+              type="button"
+              class="icon-btn"
+              :disabled="!canRedo"
+              data-testid="btn-redo"
+              title="Refazer (Ctrl+Shift+Z)"
+              aria-label="Refazer"
+              @click="emit('redo')"
+            >
+              <Redo2 :size="15" />
+            </button>
+          </div>
 
-        <button data-testid="btn-import" @click="triggerImportClick">Importar JSON</button>
-        <input
-          ref="fileInputRef"
-          type="file"
-          accept=".json,application/json"
-          class="sr-only"
-          data-testid="file-import-input"
-          @change="handleFileChosen"
-        />
+          <button
+            type="button"
+            data-testid="btn-layout"
+            title="Organizar layout da visão ativa"
+            @click="emit('applyLayout')"
+          >
+            <LayoutGrid :size="14" />
+            <span class="ff-hide-md">Organizar layout</span>
+          </button>
 
-        <button data-testid="btn-export" class="primary" @click="emit('exportJson')">
-          Exportar JSON
-          <span
-            v-if="unexportedChangesFlag"
-            class="ff-dot"
-            title="Há alterações locais ainda não exportadas para JSON"
+          <button type="button" data-testid="btn-import" title="Importar JSON v1" @click="triggerImportClick">
+            <Upload :size="14" />
+            <span class="ff-hide-lg">Importar</span>
+          </button>
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept=".json,application/json"
+            class="sr-only"
+            data-testid="file-import-input"
+            @change="handleFileChosen"
           />
+
+          <button
+            type="button"
+            data-testid="btn-export"
+            class="primary"
+            title="Exportar projeto em JSON v1"
+            @click="emit('exportJson')"
+          >
+            <Download :size="14" />
+            <span class="ff-hide-md">Exportar</span>
+            <span
+              v-if="unexportedChangesFlag"
+              class="ff-dot"
+              title="Há alterações locais ainda não exportadas para JSON"
+            />
+          </button>
+
+          <button
+            type="button"
+            class="ghost icon-btn"
+            title="Exportar diagnóstico local"
+            aria-label="Exportar diagnóstico local"
+            @click="showDiagModal = true"
+          >
+            <Terminal :size="15" />
+          </button>
+
+          <button
+            type="button"
+            class="danger icon-btn"
+            title="Excluir projeto atual"
+            aria-label="Excluir projeto atual"
+            @click="showDeleteModal = true"
+          >
+            <Trash2 :size="15" />
+          </button>
+
+          <span
+            class="ff-save-pill"
+            :class="{ 'is-dirty': dirtyFlag || isSaving }"
+            data-testid="save-status"
+          >
+            {{ isSaving ? 'Salvando…' : dirtyFlag ? 'Pendente' : 'Salvo' }}
+          </span>
+
+          <button
+            type="button"
+            class="ghost icon-btn"
+            :class="{ 'is-active': showInspector }"
+            title="Alternar painel inspetor"
+            aria-label="Alternar painel inspetor"
+            @click="emit('toggleInspector')"
+          >
+            <PanelRight :size="16" />
+          </button>
+        </template>
+
+        <button
+          type="button"
+          class="ghost icon-btn"
+          data-testid="btn-theme-toggle"
+          :title="resolvedScheme === 'dark' ? 'Alternar para modo claro' : 'Alternar para modo escuro'"
+          :aria-label="resolvedScheme === 'dark' ? 'Alternar para modo claro' : 'Alternar para modo escuro'"
+          @click="toggleColorScheme"
+        >
+          <Sun v-if="resolvedScheme === 'dark'" :size="16" />
+          <Moon v-else :size="16" />
         </button>
-
-        <button title="Exportar diagnóstico local" @click="showDiagModal = true">Log</button>
-        <button class="danger" title="Excluir projeto atual" @click="emit('deleteProject')">✕</button>
-
-        <span class="ff-save-indicator" data-testid="save-status">
-          {{ isSaving ? 'Salvando…' : dirtyFlag ? 'Pendente' : 'Salvo' }}
-        </span>
       </div>
     </div>
 
@@ -201,34 +329,63 @@ function confirmExportDiagnostics(): void {
       role="alert"
       data-testid="recovery-banner"
     >
-      <span><strong>Atenção:</strong> {{ recoveryBanner.message }}</span>
+      <span class="ff-recovery-banner__msg">
+        <AlertTriangle :size="16" />
+        <span><strong>Atenção:</strong> {{ recoveryBanner.message }}</span>
+      </span>
       <div class="ff-topbar__group">
-        <button data-testid="btn-recovery-reload" @click="emit('reloadFromDb')">
+        <button type="button" data-testid="btn-recovery-reload" @click="emit('reloadFromDb')">
           Recarregar do IndexedDB
         </button>
-        <button class="primary" data-testid="btn-recovery-download" @click="emit('downloadEmergencyJson')">
+        <button
+          type="button"
+          class="primary"
+          data-testid="btn-recovery-download"
+          @click="emit('downloadEmergencyJson')"
+        >
+          <FileJson2 :size="14" />
           Baixar JSON da memória
         </button>
       </div>
     </div>
 
-    <div v-if="showDiagModal" class="ff-modal-backdrop" role="dialog" aria-modal="true">
-      <div class="ff-modal">
-        <h3>Exportar Diagnóstico Local</h3>
-        <p>
-          O log local registra apenas códigos de evento, durações e contagens numéricas (sem nomes ou
-          descrições autorais).
-        </p>
-        <label class="ff-checkbox">
-          <input v-model="includeProjectInDiag" type="checkbox" />
-          Anexar o JSON completo do projeto atual (opt-in explícito)
-        </label>
-        <div class="ff-modal__actions">
-          <button @click="showDiagModal = false">Cancelar</button>
-          <button class="primary" @click="confirmExportDiagnostics">Baixar Diagnóstico</button>
-        </div>
-      </div>
-    </div>
+    <!-- Diagnostics export dialog -->
+    <AppDialog
+      :open="showDiagModal"
+      title="Exportar Diagnóstico Local"
+      @close="showDiagModal = false"
+    >
+      <p class="ff-dialog-text">
+        O log local registra apenas códigos de evento, durações e contagens numéricas (sem nomes ou
+        descrições autorais).
+      </p>
+      <label class="ff-checkbox">
+        <input v-model="includeProjectInDiag" type="checkbox" />
+        Anexar o JSON completo do projeto atual (opt-in explícito)
+      </label>
+      <template #actions>
+        <button type="button" @click="showDiagModal = false">Cancelar</button>
+        <button type="button" class="primary" @click="confirmExportDiagnostics">
+          Baixar Diagnóstico
+        </button>
+      </template>
+    </AppDialog>
+
+    <!-- Delete project confirmation dialog -->
+    <AppDialog
+      :open="showDeleteModal"
+      title="Excluir Projeto Local"
+      @close="showDeleteModal = false"
+    >
+      <p class="ff-dialog-text">
+        Tem certeza que deseja excluir o projeto <strong>{{ project?.name }}</strong> do
+        armazenamento local (IndexedDB)? Esta ação não pode ser desfeita.
+      </p>
+      <template #actions>
+        <button type="button" @click="showDeleteModal = false">Cancelar</button>
+        <button type="button" class="danger" @click="confirmDeleteProject">Excluir Projeto</button>
+      </template>
+    </AppDialog>
   </header>
 </template>
 
@@ -244,8 +401,9 @@ function confirmExportDiagnostics(): void {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px 12px;
   padding: 8px 14px;
+  min-height: 52px;
 }
 
 .ff-topbar__group {
@@ -255,16 +413,58 @@ function confirmExportDiagnostics(): void {
 }
 
 .ff-brand {
-  font-size: 15px;
-  margin-right: 6px;
-  color: var(--ff-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+  font-size: 14.5px;
+  letter-spacing: -0.01em;
+}
+
+.ff-brand__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--ff-primary);
+  color: #ffffff;
+}
+
+.ff-select-compact {
+  max-width: 170px;
+  text-overflow: ellipsis;
+}
+
+.ff-btn-group {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--ff-surface-subtle);
+  border: 1px solid var(--ff-border);
+}
+
+.ff-btn-group button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.is-active {
+  background: var(--ff-primary-soft) !important;
+  color: var(--ff-primary-text) !important;
 }
 
 .ff-breadcrumbs {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--ff-surface-subtle);
+  border: 1px solid var(--ff-border);
+  font-size: 12.5px;
 }
 
 .ff-crumb {
@@ -284,40 +484,57 @@ function confirmExportDiagnostics(): void {
   color: var(--ff-muted);
 }
 
-.ff-inline-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--ff-muted);
-}
-
 .ff-dot {
   display: inline-block;
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: #fde047;
-  margin-left: 4px;
 }
 
-.ff-save-indicator {
+.ff-save-pill {
   font-size: 11px;
-  color: var(--ff-muted);
-  min-width: 56px;
-  text-align: right;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ff-success-bg);
+  color: var(--ff-success);
+}
+
+.ff-save-pill.is-dirty {
+  background: var(--ff-warning-bg);
+  color: var(--ff-warning);
 }
 
 .ff-recovery-banner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 14px;
+  padding: 9px 14px;
   background: var(--ff-error-bg);
-  border-top: 1px solid #fecaca;
-  color: #991b1b;
+  border-top: 1px solid var(--ff-error-border);
+  color: var(--ff-error);
   font-size: 13px;
+}
+
+.ff-recovery-banner__msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ff-dialog-text {
+  margin: 0 0 12px;
+}
+
+.ff-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ff-text);
 }
 
 .sr-only {
@@ -328,40 +545,21 @@ function confirmExportDiagnostics(): void {
   clip: rect(0, 0, 0, 0);
 }
 
-.ff-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
+@media (max-width: 1280px) {
+  .ff-hide-lg {
+    display: none;
+  }
 }
 
-.ff-modal {
-  background: var(--ff-surface);
-  border-radius: 10px;
-  padding: 18px;
-  width: 420px;
-  max-width: 90vw;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.2);
+@media (max-width: 1024px) {
+  .ff-hide-md {
+    display: none;
+  }
 }
 
-.ff-modal h3 {
-  margin: 0 0 8px;
-}
-
-.ff-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0;
-  font-size: 13px;
-}
-
-.ff-modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+@media (max-width: 768px) {
+  .ff-hide-sm {
+    display: none;
+  }
 }
 </style>

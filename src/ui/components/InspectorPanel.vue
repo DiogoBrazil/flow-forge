@@ -1,5 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import {
+  ArrowLeftRight,
+  FolderOpen,
+  Link2,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-vue-next';
 import type { ArchitectureCommand } from '@application/use-cases/editArchitecture';
 import { deriveProjectedEndpoints } from '@domain/projection';
 import type {
@@ -17,7 +25,9 @@ import type {
   SystemNodeKind,
   ViewScope,
 } from '@domain/types';
+import { inferConnectionDefaults } from '../composables/useWorkspace';
 import type { SelectedElement } from '../composables/useWorkspace';
+import AppDialog from './AppDialog.vue';
 
 const props = defineProps<{
   project: ArchitectureProject;
@@ -36,6 +46,11 @@ const selectedSystemNode = computed<SystemNode | null>(() => {
   return props.project.topology.nodes.find((n) => n.id === props.selectedElement?.id) ?? null;
 });
 
+const otherSystemNodes = computed(() => {
+  if (!selectedSystemNode.value) return [];
+  return props.project.topology.nodes.filter((n) => n.id !== selectedSystemNode.value?.id);
+});
+
 const selectedConnection = computed<RuntimeConnection | null>(() => {
   if (props.selectedElement?.kind !== 'runtime-connection') return null;
   return props.project.topology.connections.find((c) => c.id === props.selectedElement?.id) ?? null;
@@ -50,6 +65,11 @@ const activeInternal = computed(() => {
 const selectedCodeUnit = computed<CodeUnit | null>(() => {
   if (props.selectedElement?.kind !== 'code-unit' || !activeInternal.value) return null;
   return activeInternal.value.units.find((u) => u.id === props.selectedElement?.id) ?? null;
+});
+
+const otherCodeUnits = computed(() => {
+  if (!selectedCodeUnit.value || !activeInternal.value) return [];
+  return activeInternal.value.units.filter((u) => u.id !== selectedCodeUnit.value?.id);
 });
 
 const selectedStaticDep = computed<StaticDependency | null>(() => {
@@ -70,6 +90,12 @@ const adapterUnits = computed(() => {
 });
 
 const bindingSelections = ref<Record<EntityId, EntityId>>({});
+const quickConnectTargetId = ref<EntityId>('');
+const quickDepTargetId = ref<EntityId>('');
+const quickDepKind = ref<StaticDependencyKind>('depends-on');
+const pendingKindChange = ref<{ node: SystemNode; nextKind: SystemNodeKind; unitCount: number } | null>(
+  null,
+);
 
 function bindingsForConnection(runtimeConnectionId: EntityId) {
   if (props.activeScope.level !== 'internal') return [];
@@ -89,18 +115,55 @@ function handleChangeSystemNodeKind(node: SystemNode, nextKind: SystemNodeKind):
       ? props.project.internals[node.id]
       : undefined;
     if (internal && internal.units.length > 0) {
-      const confirmed = window.confirm(
-        `O serviço "${node.name}" possui ${internal.units.length} unidade(s) internas. Confirmar limpeza da arquitetura interna e alteração para "${nextKind}"? (Reversível em 1 Undo)`,
-      );
-      if (!confirmed) return;
-      emit('edit', {
-        type: 'clearInternalArchitectureAndChangeKind',
-        payload: { id: node.id, kind: nextKind },
-      });
+      pendingKindChange.value = { node, nextKind, unitCount: internal.units.length };
       return;
     }
   }
   emit('edit', { type: 'changeSystemNodeKind', payload: { id: node.id, kind: nextKind } });
+}
+
+function confirmKindChange(): void {
+  if (!pendingKindChange.value) return;
+  const { node, nextKind } = pendingKindChange.value;
+  pendingKindChange.value = null;
+  emit('edit', {
+    type: 'clearInternalArchitectureAndChangeKind',
+    payload: { id: node.id, kind: nextKind },
+  });
+}
+
+function handleQuickConnect(): void {
+  const source = selectedSystemNode.value;
+  const targetId = quickConnectTargetId.value;
+  if (!source || !targetId) return;
+  const target = props.project.topology.nodes.find((n) => n.id === targetId);
+  const defaults = inferConnectionDefaults(source.kind, target?.kind);
+  emit('edit', {
+    type: 'addRuntimeConnection',
+    payload: {
+      sourceId: source.id,
+      targetId,
+      kind: defaults.kind,
+      protocol: defaults.protocol,
+    },
+  });
+  quickConnectTargetId.value = '';
+}
+
+function handleQuickAddDependency(): void {
+  if (props.activeScope.level !== 'internal' || !selectedCodeUnit.value || !quickDepTargetId.value) {
+    return;
+  }
+  emit('edit', {
+    type: 'addStaticDependency',
+    payload: {
+      serviceId: props.activeScope.serviceId,
+      sourceId: selectedCodeUnit.value.id,
+      targetId: quickDepTargetId.value,
+      kind: quickDepKind.value,
+    },
+  });
+  quickDepTargetId.value = '';
 }
 
 function handleBindEndpoint(runtimeConnectionId: EntityId): void {
@@ -189,23 +252,58 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
           "
         />
       </label>
+
+      <!-- Quick Connect Card -->
+      <div v-if="otherSystemNodes.length > 0" class="ff-quick-connect" data-testid="quick-connect-box">
+        <div class="ff-quick-connect__title">
+          <Link2 :size="13" />
+          <span>Conectar a outro nó</span>
+        </div>
+        <div class="ff-quick-connect__row">
+          <select
+            v-model="quickConnectTargetId"
+            aria-label="Selecionar destino da ligação"
+            data-testid="quick-connect-target"
+          >
+            <option value="">Escolher destino…</option>
+            <option v-for="n in otherSystemNodes" :key="n.id" :value="n.id">
+              {{ n.name }} ({{ n.kind }})
+            </option>
+          </select>
+          <button
+            type="button"
+            class="primary"
+            :disabled="!quickConnectTargetId"
+            data-testid="quick-connect-btn"
+            @click="handleQuickConnect"
+          >
+            <Plus :size="14" />
+            Ligar
+          </button>
+        </div>
+      </div>
+
       <div class="ff-inspector__actions">
         <button
           v-if="selectedSystemNode.kind === 'service'"
+          type="button"
           class="primary"
           data-testid="btn-drilldown"
           @click="emit('drillDown', selectedSystemNode.id)"
         >
-          Abrir Arquitetura Interna
+          <FolderOpen :size="14" />
+          Arquitetura Interna
         </button>
         <button
+          type="button"
           class="danger"
           @click="
             emit('edit', { type: 'deleteSystemNode', payload: { id: selectedSystemNode.id } });
             emit('clearSelection');
           "
         >
-          Excluir Nó
+          <Trash2 :size="14" />
+          Excluir
         </button>
       </div>
     </section>
@@ -310,6 +408,7 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
       </label>
       <div class="ff-inspector__actions">
         <button
+          type="button"
           @click="
             emit('edit', {
               type: 'reconnectRuntimeConnection',
@@ -321,16 +420,19 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
             })
           "
         >
-          ⇄ Inverter Direção
+          <ArrowLeftRight :size="14" />
+          Inverter
         </button>
         <button
+          type="button"
           class="danger"
           @click="
             emit('edit', { type: 'deleteRuntimeConnection', payload: { id: selectedConnection.id } });
             emit('clearSelection');
           "
         >
-          Excluir Conexão
+          <Trash2 :size="14" />
+          Excluir
         </button>
       </div>
     </section>
@@ -398,8 +500,48 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
           <option value="domain">domain</option>
         </select>
       </label>
+
+      <!-- Quick Static Dependency Card -->
+      <div v-if="otherCodeUnits.length > 0" class="ff-quick-connect" data-testid="quick-dep-box">
+        <div class="ff-quick-connect__title">
+          <Link2 :size="13" />
+          <span>Adicionar dependência estática</span>
+        </div>
+        <select
+          v-model="quickDepKind"
+          aria-label="Tipo da dependência estática"
+          data-testid="quick-dep-kind"
+        >
+          <option value="depends-on">depends-on (depende de)</option>
+          <option value="implements">implements (implementa)</option>
+        </select>
+        <div class="ff-quick-connect__row">
+          <select
+            v-model="quickDepTargetId"
+            aria-label="Selecionar unidade destino"
+            data-testid="quick-dep-target"
+          >
+            <option value="">Escolher destino…</option>
+            <option v-for="u in otherCodeUnits" :key="u.id" :value="u.id">
+              {{ u.name }} ({{ u.layer }})
+            </option>
+          </select>
+          <button
+            type="button"
+            class="primary"
+            :disabled="!quickDepTargetId"
+            data-testid="quick-dep-btn"
+            @click="handleQuickAddDependency"
+          >
+            <Plus :size="14" />
+            Ligar
+          </button>
+        </div>
+      </div>
+
       <div class="ff-inspector__actions">
         <button
+          type="button"
           class="danger"
           @click="
             emit('edit', {
@@ -409,6 +551,7 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
             emit('clearSelection');
           "
         >
+          <Trash2 :size="14" />
           Excluir Unidade
         </button>
       </div>
@@ -458,6 +601,7 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
       </label>
       <div class="ff-inspector__actions">
         <button
+          type="button"
           class="danger"
           @click="
             emit('edit', {
@@ -467,13 +611,14 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
             emit('clearSelection');
           "
         >
-          Excluir Dependência
+          <Trash2 :size="14" />
+          Excluir
         </button>
       </div>
     </section>
 
     <section v-else class="ff-inspector__empty">
-      <p>Selecione um elemento ou conexão no canvas para editar suas propriedades.</p>
+      <p>Selecione um card ou ligação no canvas para editar propriedades ou criar conexões rápidas.</p>
     </section>
 
     <!-- Fixed "Fronteira Externa" section in Level 2 -->
@@ -511,11 +656,13 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
           >
             <span>{{ unitNameById(b.adapterUnitId) }}</span>
             <button
+              type="button"
               class="ff-binding-pill__del"
               title="Remover vínculo"
+              aria-label="Remover vínculo"
               @click="emit('edit', { type: 'deleteBoundaryBinding', payload: { id: b.id } })"
             >
-              ×
+              <X :size="12" />
             </button>
           </div>
           <small
@@ -538,6 +685,7 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
             </option>
           </select>
           <button
+            type="button"
             :data-testid="`bind-btn-${ep.runtimeConnectionId}`"
             :disabled="!bindingSelections[ep.runtimeConnectionId]"
             @click="handleBindEndpoint(ep.runtimeConnectionId)"
@@ -547,16 +695,36 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
         </div>
       </div>
     </section>
+
+    <!-- Confirmation dialog replacing window.confirm() for service kind change -->
+    <AppDialog
+      :open="pendingKindChange !== null"
+      title="Limpar Arquitetura Interna?"
+      @close="pendingKindChange = null"
+    >
+      <p class="ff-dialog-msg">
+        O serviço <strong>{{ pendingKindChange?.node.name }}</strong> possui
+        <strong>{{ pendingKindChange?.unitCount }}</strong> unidade(s) internas. Alterar para
+        <code>{{ pendingKindChange?.nextKind }}</code> removerá sua arquitetura interna e vínculos
+        (reversível em 1 Undo).
+      </p>
+      <template #actions>
+        <button type="button" @click="pendingKindChange = null">Cancelar</button>
+        <button type="button" class="danger" @click="confirmKindChange">
+          Confirmar Alteração
+        </button>
+      </template>
+    </AppDialog>
   </aside>
 </template>
 
 <style scoped>
 .ff-inspector {
-  width: 300px;
+  width: 312px;
   flex-shrink: 0;
   background: var(--ff-surface);
   border-left: 1px solid var(--ff-border);
-  padding: 12px;
+  padding: 14px 12px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -564,8 +732,10 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
 }
 
 .ff-inspector h4 {
-  margin: 0 0 8px;
-  font-size: 12px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ff-muted);
 }
@@ -573,24 +743,63 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
 .ff-inspector__section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
 }
 
 .ff-inspector__empty {
+  padding: 14px 12px;
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-surface-subtle);
+  border: 1px dashed var(--ff-border-strong);
   color: var(--ff-muted);
   font-size: 12px;
+  line-height: 1.45;
+}
+
+.ff-inspector__empty p {
+  margin: 0;
 }
 
 .ff-field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   font-size: 12px;
 }
 
 .ff-field span {
   color: var(--ff-muted);
   font-weight: 500;
+}
+
+.ff-quick-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-primary-soft);
+  border: 1px solid var(--ff-border);
+}
+
+.ff-quick-connect__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ff-primary-text);
+}
+
+.ff-quick-connect__row {
+  display: flex;
+  gap: 6px;
+}
+
+.ff-quick-connect__row select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
 }
 
 .ff-inspector__actions {
@@ -613,9 +822,9 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
 
 .ff-endpoint-card {
   border: 1px solid var(--ff-border);
-  border-radius: 8px;
-  padding: 8px;
-  background: #f8fafc;
+  border-radius: var(--ff-radius-md);
+  padding: 9px;
+  background: var(--ff-surface-subtle);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -629,22 +838,23 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
 }
 
 .ff-ep-dir.inbound {
-  color: #1d4ed8;
+  color: var(--ff-primary-text);
 }
 
 .ff-ep-dir.outbound {
-  color: #7c3aed;
+  color: #a855f7;
 }
 
 .ff-ep-proto {
-  background: #e2e8f0;
-  padding: 1px 5px;
+  background: var(--ff-surface-hover);
+  color: var(--ff-text-secondary);
+  padding: 1px 6px;
   border-radius: 4px;
   font-size: 10px;
 }
 
 .ff-endpoint-card__peer {
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .ff-endpoint-card__bindings {
@@ -657,34 +867,39 @@ function handleBindEndpoint(runtimeConnectionId: EntityId): void {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #dbeafe;
-  color: #1e40af;
+  background: var(--ff-primary-soft);
+  color: var(--ff-primary-text);
   font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 500;
 }
 
 .ff-binding-pill__del {
   border: none;
   background: transparent;
-  padding: 0 2px;
-  font-weight: 700;
-  color: #1e40af;
+  padding: 0;
+  color: inherit;
 }
 
 .ff-ep-pending {
-  color: #b45309;
+  color: var(--ff-warning);
   font-size: 11px;
+  font-weight: 500;
 }
 
 .ff-endpoint-card__bind-row {
   display: flex;
-  gap: 4px;
+  gap: 5px;
 }
 
 .ff-endpoint-card__bind-row select {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
+  font-size: 11.5px;
+}
+
+.ff-dialog-msg {
+  margin: 0;
 }
 </style>
