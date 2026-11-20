@@ -44,6 +44,12 @@ export default mergeConfig(
             branches: 85,
             statements: 90,
           },
+          'src/rules/**': {
+            lines: 90,
+            functions: 90,
+            branches: 85,
+            statements: 90,
+          },
         },
       },
     },

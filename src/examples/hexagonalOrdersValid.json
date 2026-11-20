@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-11-20T12:00:00.000Z",
+  "project": {
+    "id": "example-hexagonal-orders-valid",
+    "name": "Pedidos Hexagonal (Válido)",
+    "description": "Sistema de pedidos distribuído com Orders API em Ports & Adapters e Boundary Binding completo.",
+    "ruleProfile": "hexagonal",
+    "createdAt": "2026-11-20T12:00:00.000Z",
+    "updatedAt": "2026-11-20T12:00:00.000Z",
+    "topology": {
+      "nodes": [
+        {
+          "id": "broker-kafka",
+          "name": "Kafka Broker",
+          "kind": "broker",
+          "description": "Barramento de eventos de pedidos",
+          "technology": "Apache Kafka"
+        },
+        {
+          "id": "client-web",
+          "name": "Web Client",
+          "kind": "client",
+          "description": "Aplicação SPA de clientes",
+          "technology": "Vue 3"
+        },
+        {
+          "id": "db-postgres",
+          "name": "PostgreSQL",
+          "kind": "database",
+          "description": "Banco relacional principal de pedidos",
+          "technology": "PostgreSQL 16"
+        },
+        {
+          "id": "gw-api",
+          "name": "API Gateway",
+          "kind": "gateway",
+          "description": "Gateway HTTP de borda",
+          "technology": "Kong"
+        },
+        {
+          "id": "svc-notifications",
+          "name": "Notifications Service",
+          "kind": "service",
+          "description": "Consome eventos de pedidos criados",
+          "technology": "Go"
+        },
+        {
+          "id": "svc-orders",
+          "name": "Orders API",
+          "kind": "service",
+          "description": "Serviço central de pedidos em Ports & Adapters",
+          "technology": "TypeScript"
+        }
+      ],
+      "connections": [
+        {
+          "id": "c-broker-notif",
+          "sourceId": "broker-kafka",
+          "targetId": "svc-notifications",
+          "kind": "async-consume",
+          "protocol": "kafka",
+          "label": "order.created"
+        },
+        {
+          "id": "c-client-gw",
+          "sourceId": "client-web",
+          "targetId": "gw-api",
+          "kind": "sync-call",
+          "protocol": "http",
+          "label": "HTTPS"
+        },
+        {
+          "id": "c-gw-orders",
+          "sourceId": "gw-api",
+          "targetId": "svc-orders",
+          "kind": "sync-call",
+          "protocol": "http",
+          "label": "POST /orders"
+        },
+        {
+          "id": "c-orders-broker",
+          "sourceId": "svc-orders",
+          "targetId": "broker-kafka",
+          "kind": "async-publish",
+          "protocol": "kafka",
+          "label": "order.created"
+        },
+        {
+          "id": "c-orders-pg",
+          "sourceId": "svc-orders",
+          "targetId": "db-postgres",
+          "kind": "data-access",
+          "protocol": "sql",
+          "label": "orders_db"
+        }
+      ]
+    },
+    "internals": {
+      "svc-orders": {
+        "serviceId": "svc-orders",
+        "units": [
+          {
+            "id": "u-create-order",
+            "name": "CreateOrder UseCase",
+            "kind": "use-case",
+            "layer": "application",
+            "description": "Orquestra criação de pedido e publicação de evento"
+          },
+          {
+            "id": "u-event-pub-if",
+            "name": "OrderEventPublisher",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de publicação de eventos de domínio"
+          },
+          {
+            "id": "u-http-adapter",
+            "name": "HTTP Order Adapter",
+            "kind": "inbound-adapter",
+            "layer": "adapters",
+            "description": "Controlador REST de entrada"
+          },
+          {
+            "id": "u-kafka-adapter",
+            "name": "KafkaPublisherAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Adaptador de saída para Kafka"
+          },
+          {
+            "id": "u-order-entity",
+            "name": "Order",
+            "kind": "domain-entity",
+            "layer": "domain",
+            "description": "Agregado raiz de pedido"
+          },
+          {
+            "id": "u-order-repo-if",
+            "name": "OrderRepository",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de persistência de pedidos"
+          },
+          {
+            "id": "u-pg-adapter",
+            "name": "PostgresOrderAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Implementação SQL do repositório de pedidos"
+          }
+        ],
+        "dependencies": [
+          {
+            "id": "d-http-uc",
+            "sourceId": "u-http-adapter",
+            "targetId": "u-create-order",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-kafka-pub-if",
+            "sourceId": "u-kafka-adapter",
+            "targetId": "u-event-pub-if",
+            "kind": "implements"
+          },
+          {
+            "id": "d-pg-repo-if",
+            "sourceId": "u-pg-adapter",
+            "targetId": "u-order-repo-if",
+            "kind": "implements"
+          },
+          {
+            "id": "d-uc-entity",
+            "sourceId": "u-create-order",
+            "targetId": "u-order-entity",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-uc-pub-if",
+            "sourceId": "u-create-order",
+            "targetId": "u-event-pub-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-uc-repo-if",
+            "sourceId": "u-create-order",
+            "targetId": "u-order-repo-if",
+            "kind": "depends-on"
+          }
+        ]
+      }
+    },
+    "bindings": [
+      {
+        "id": "b-http-in",
+        "serviceId": "svc-orders",
+        "runtimeConnectionId": "c-gw-orders",
+        "adapterUnitId": "u-http-adapter"
+      },
+      {
+        "id": "b-kafka-out",
+        "serviceId": "svc-orders",
+        "runtimeConnectionId": "c-orders-broker",
+        "adapterUnitId": "u-kafka-adapter"
+      },
+      {
+        "id": "b-pg-out",
+        "serviceId": "svc-orders",
+        "runtimeConnectionId": "c-orders-pg",
+        "adapterUnitId": "u-pg-adapter"
+      }
+    ],
+    "views": [
+      {
+        "id": "view-int-orders",
+        "scope": {
+          "level": "internal",
+          "serviceId": "svc-orders"
+        },
+        "nodePositions": {
+          "u-create-order": { "x": 320, "y": 140 },
+          "u-event-pub-if": { "x": 620, "y": 240 },
+          "u-http-adapter": { "x": 40, "y": 140 },
+          "u-kafka-adapter": { "x": 920, "y": 240 },
+          "u-order-entity": { "x": 620, "y": 20 },
+          "u-order-repo-if": { "x": 620, "y": 130 },
+          "u-pg-adapter": { "x": 920, "y": 130 }
+        }
+      },
+      {
+        "id": "view-system",
+        "scope": {
+          "level": "system"
+        },
+        "nodePositions": {
+          "broker-kafka": { "x": 880, "y": 220 },
+          "client-web": { "x": 40, "y": 140 },
+          "db-postgres": { "x": 880, "y": 60 },
+          "gw-api": { "x": 320, "y": 140 },
+          "svc-notifications": { "x": 1160, "y": 220 },
+          "svc-orders": { "x": 600, "y": 140 }
+        }
+      }
+    ]
+  }
+}

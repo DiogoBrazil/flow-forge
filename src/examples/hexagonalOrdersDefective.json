@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-11-20T12:00:00.000Z",
+  "project": {
+    "id": "example-hexagonal-orders-defective",
+    "name": "Pedidos Hexagonal (Com Defeitos)",
+    "description": "Modelo estruturalmente válido com violações arquiteturais intencionais cobrindo todas as 9 regras determinísticas.",
+    "ruleProfile": "hexagonal",
+    "createdAt": "2026-11-20T12:00:00.000Z",
+    "updatedAt": "2026-11-20T12:00:00.000Z",
+    "topology": {
+      "nodes": [
+        {
+          "id": "cache-redis",
+          "name": "Redis Cache",
+          "kind": "cache",
+          "description": "Cache sem adaptador interno vinculado"
+        },
+        {
+          "id": "client-web",
+          "name": "Web Client",
+          "kind": "client",
+          "description": "Cliente web"
+        },
+        {
+          "id": "db-postgres",
+          "name": "PostgreSQL",
+          "kind": "database",
+          "description": "Banco relacional"
+        },
+        {
+          "id": "gw-api",
+          "name": "API Gateway",
+          "kind": "gateway",
+          "description": "Gateway HTTP"
+        },
+        {
+          "id": "svc-billing",
+          "name": "Billing API",
+          "kind": "service",
+          "description": "Serviço de cobrança em ciclo síncrono com Orders API"
+        },
+        {
+          "id": "svc-orders",
+          "name": "Orders API",
+          "kind": "service",
+          "description": "Serviço com violações arquiteturais intencionais"
+        }
+      ],
+      "connections": [
+        {
+          "id": "c-billing-orders",
+          "sourceId": "svc-billing",
+          "targetId": "svc-orders",
+          "kind": "sync-call",
+          "protocol": "http"
+        },
+        {
+          "id": "c-client-db-bad",
+          "sourceId": "client-web",
+          "targetId": "db-postgres",
+          "kind": "data-access",
+          "protocol": "sql"
+        },
+        {
+          "id": "c-gw-orders",
+          "sourceId": "gw-api",
+          "targetId": "svc-orders",
+          "kind": "sync-call",
+          "protocol": "http"
+        },
+        {
+          "id": "c-orders-billing",
+          "sourceId": "svc-orders",
+          "targetId": "svc-billing",
+          "kind": "sync-call",
+          "protocol": "http"
+        },
+        {
+          "id": "c-orders-redis",
+          "sourceId": "svc-orders",
+          "targetId": "cache-redis",
+          "kind": "cache-access",
+          "protocol": "redis"
+        }
+      ]
+    },
+    "internals": {
+      "svc-orders": {
+        "serviceId": "svc-orders",
+        "units": [
+          {
+            "id": "u-create-order",
+            "name": "CreateOrder UseCase",
+            "kind": "use-case",
+            "layer": "application",
+            "description": "Caso de uso acoplado diretamente ao adaptador SQL"
+          },
+          {
+            "id": "u-discount",
+            "name": "DiscountService",
+            "kind": "domain-service",
+            "layer": "domain",
+            "description": "Em ciclo com PricingService"
+          },
+          {
+            "id": "u-http-adapter",
+            "name": "HTTP Adapter",
+            "kind": "inbound-adapter",
+            "layer": "adapters",
+            "description": "Adaptador HTTP"
+          },
+          {
+            "id": "u-orphan-adapter",
+            "name": "OrphanAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Adaptador sem BoundaryBinding"
+          },
+          {
+            "id": "u-payment-if",
+            "name": "PaymentGateway",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Interface sem implementação"
+          },
+          {
+            "id": "u-pg-repo",
+            "name": "PostgresOrderAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Adaptador SQL vinculado com direção errada"
+          },
+          {
+            "id": "u-pricing",
+            "name": "PricingService",
+            "kind": "domain-service",
+            "layer": "domain",
+            "description": "Em ciclo com DiscountService"
+          }
+        ],
+        "dependencies": [
+          {
+            "id": "d-bad-implements",
+            "sourceId": "u-http-adapter",
+            "targetId": "u-create-order",
+            "kind": "implements"
+          },
+          {
+            "id": "d-cycle-1",
+            "sourceId": "u-pricing",
+            "targetId": "u-discount",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-cycle-2",
+            "sourceId": "u-discount",
+            "targetId": "u-pricing",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-layer-violation",
+            "sourceId": "u-create-order",
+            "targetId": "u-pg-repo",
+            "kind": "depends-on"
+          }
+        ]
+      }
+    },
+    "bindings": [
+      {
+        "id": "b-http-in",
+        "serviceId": "svc-orders",
+        "runtimeConnectionId": "c-gw-orders",
+        "adapterUnitId": "u-http-adapter"
+      },
+      {
+        "id": "b-wrong-direction",
+        "serviceId": "svc-orders",
+        "runtimeConnectionId": "c-billing-orders",
+        "adapterUnitId": "u-pg-repo"
+      }
+    ],
+    "views": [
+      {
+        "id": "view-int-orders",
+        "scope": {
+          "level": "internal",
+          "serviceId": "svc-orders"
+        },
+        "nodePositions": {
+          "u-create-order": { "x": 320, "y": 80 },
+          "u-discount": { "x": 620, "y": 240 },
+          "u-http-adapter": { "x": 40, "y": 80 },
+          "u-orphan-adapter": { "x": 40, "y": 240 },
+          "u-payment-if": { "x": 320, "y": 240 },
+          "u-pg-repo": { "x": 620, "y": 80 },
+          "u-pricing": { "x": 900, "y": 240 }
+        }
+      },
+      {
+        "id": "view-system",
+        "scope": {
+          "level": "system"
+        },
+        "nodePositions": {
+          "cache-redis": { "x": 900, "y": 240 },
+          "client-web": { "x": 40, "y": 140 },
+          "db-postgres": { "x": 320, "y": 280 },
+          "gw-api": { "x": 320, "y": 100 },
+          "svc-billing": { "x": 900, "y": 80 },
+          "svc-orders": { "x": 600, "y": 140 }
+        }
+      }
+    ]
+  }
+}
