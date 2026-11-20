@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-11-20T16:00:00.000Z",
+  "project": {
+    "id": "real-system-api-ports-adapters",
+    "name": "Sistema Real 1 — API de Faturamento (Ports & Adapters)",
+    "description": "API corporativa anonimizada de emissão e cancelamento de faturas modelada em Ports & Adapters.",
+    "ruleProfile": "hexagonal",
+    "createdAt": "2026-11-20T16:00:00.000Z",
+    "updatedAt": "2026-11-20T16:00:00.000Z",
+    "topology": {
+      "nodes": [
+        {
+          "id": "client-erp",
+          "name": "ERP Client",
+          "kind": "client",
+          "description": "Sistema interno que solicita emissão de faturas",
+          "technology": "Web / CLI"
+        },
+        {
+          "id": "db-ledger",
+          "name": "PostgreSQL Ledger",
+          "kind": "database",
+          "description": "Persistência transacional de faturas e eventos contábeis",
+          "technology": "PostgreSQL 16"
+        },
+        {
+          "id": "ext-tax",
+          "name": "Tax Authority API",
+          "kind": "external-system",
+          "description": "Serviço fiscal externo para autorização de notas",
+          "technology": "REST/XML"
+        },
+        {
+          "id": "gw-edge",
+          "name": "Edge API Gateway",
+          "kind": "gateway",
+          "description": "Autenticação mTLS e rate limiting",
+          "technology": "Envoy"
+        },
+        {
+          "id": "svc-invoicing",
+          "name": "Invoicing API",
+          "kind": "service",
+          "description": "Serviço principal de faturamento em Ports & Adapters",
+          "technology": "TypeScript / Node 22"
+        }
+      ],
+      "connections": [
+        {
+          "id": "c-erp-gw",
+          "sourceId": "client-erp",
+          "targetId": "gw-edge",
+          "kind": "sync-call",
+          "protocol": "http",
+          "label": "HTTPS JSON"
+        },
+        {
+          "id": "c-gw-inv",
+          "sourceId": "gw-edge",
+          "targetId": "svc-invoicing",
+          "kind": "sync-call",
+          "protocol": "http",
+          "label": "POST /invoices"
+        },
+        {
+          "id": "c-inv-db",
+          "sourceId": "svc-invoicing",
+          "targetId": "db-ledger",
+          "kind": "data-access",
+          "protocol": "sql",
+          "label": "invoices_schema"
+        },
+        {
+          "id": "c-inv-tax",
+          "sourceId": "svc-invoicing",
+          "targetId": "ext-tax",
+          "kind": "sync-call",
+          "protocol": "http",
+          "label": "POST /authorize"
+        }
+      ]
+    },
+    "internals": {
+      "svc-invoicing": {
+        "serviceId": "svc-invoicing",
+        "units": [
+          {
+            "id": "u-cancel-uc",
+            "name": "CancelInvoice UseCase",
+            "kind": "use-case",
+            "layer": "application",
+            "description": "Valida janela fiscal e cancela fatura emitida"
+          },
+          {
+            "id": "u-http-in",
+            "name": "InvoiceHttpController",
+            "kind": "inbound-adapter",
+            "layer": "adapters",
+            "description": "Controlador HTTP de entrada"
+          },
+          {
+            "id": "u-inv-entity",
+            "name": "Invoice",
+            "kind": "domain-entity",
+            "layer": "domain",
+            "description": "Agregado de fatura com invariantes fiscais"
+          },
+          {
+            "id": "u-inv-repo-if",
+            "name": "InvoiceRepository",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de persistência de faturas"
+          },
+          {
+            "id": "u-issue-uc",
+            "name": "IssueInvoice UseCase",
+            "kind": "use-case",
+            "layer": "application",
+            "description": "Calcula impostos, autoriza e persiste fatura"
+          },
+          {
+            "id": "u-pg-out",
+            "name": "PostgresInvoiceAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Implementação SQL do repositório de faturas"
+          },
+          {
+            "id": "u-tax-calc",
+            "name": "TaxCalculator",
+            "kind": "domain-service",
+            "layer": "domain",
+            "description": "Regras puras de cálculo de alíquotas"
+          },
+          {
+            "id": "u-tax-gw-if",
+            "name": "TaxAuthorizationGateway",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de autorização junto ao órgão fiscal"
+          },
+          {
+            "id": "u-tax-http-out",
+            "name": "HttpTaxGatewayAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Cliente HTTP com retry para o órgão fiscal"
+          }
+        ],
+        "dependencies": [
+          {
+            "id": "d-cancel-entity",
+            "sourceId": "u-cancel-uc",
+            "targetId": "u-inv-entity",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-cancel-repo",
+            "sourceId": "u-cancel-uc",
+            "targetId": "u-inv-repo-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-cancel-taxgw",
+            "sourceId": "u-cancel-uc",
+            "targetId": "u-tax-gw-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-http-cancel",
+            "sourceId": "u-http-in",
+            "targetId": "u-cancel-uc",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-http-issue",
+            "sourceId": "u-http-in",
+            "targetId": "u-issue-uc",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-issue-calc",
+            "sourceId": "u-issue-uc",
+            "targetId": "u-tax-calc",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-issue-entity",
+            "sourceId": "u-issue-uc",
+            "targetId": "u-inv-entity",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-issue-repo",
+            "sourceId": "u-issue-uc",
+            "targetId": "u-inv-repo-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-issue-taxgw",
+            "sourceId": "u-issue-uc",
+            "targetId": "u-tax-gw-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-pg-impl",
+            "sourceId": "u-pg-out",
+            "targetId": "u-inv-repo-if",
+            "kind": "implements"
+          },
+          {
+            "id": "d-tax-impl",
+            "sourceId": "u-tax-http-out",
+            "targetId": "u-tax-gw-if",
+            "kind": "implements"
+          }
+        ]
+      }
+    },
+    "bindings": [
+      {
+        "id": "b-http-in",
+        "serviceId": "svc-invoicing",
+        "runtimeConnectionId": "c-gw-inv",
+        "adapterUnitId": "u-http-in"
+      },
+      {
+        "id": "b-pg-out",
+        "serviceId": "svc-invoicing",
+        "runtimeConnectionId": "c-inv-db",
+        "adapterUnitId": "u-pg-out"
+      },
+      {
+        "id": "b-tax-out",
+        "serviceId": "svc-invoicing",
+        "runtimeConnectionId": "c-inv-tax",
+        "adapterUnitId": "u-tax-http-out"
+      }
+    ],
+    "views": [
+      {
+        "id": "view-int-invoicing",
+        "scope": {
+          "level": "internal",
+          "serviceId": "svc-invoicing"
+        },
+        "nodePositions": {
+          "u-cancel-uc": { "x": 320, "y": 240 },
+          "u-http-in": { "x": 40, "y": 150 },
+          "u-inv-entity": { "x": 620, "y": 40 },
+          "u-inv-repo-if": { "x": 620, "y": 240 },
+          "u-issue-uc": { "x": 320, "y": 80 },
+          "u-pg-out": { "x": 920, "y": 240 },
+          "u-tax-calc": { "x": 620, "y": 140 },
+          "u-tax-gw-if": { "x": 620, "y": 360 },
+          "u-tax-http-out": { "x": 920, "y": 360 }
+        }
+      },
+      {
+        "id": "view-system",
+        "scope": {
+          "level": "system"
+        },
+        "nodePositions": {
+          "client-erp": { "x": 40, "y": 140 },
+          "db-ledger": { "x": 880, "y": 60 },
+          "ext-tax": { "x": 880, "y": 220 },
+          "gw-edge": { "x": 320, "y": 140 },
+          "svc-invoicing": { "x": 600, "y": 140 }
+        }
+      }
+    ]
+  }
+}

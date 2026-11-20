@@ -20,8 +20,8 @@ const ALL_NINE_RULE_IDS = [
 ] as const;
 
 describe('Built-in examples integrity & deterministic validation', () => {
-  it('parses all built-in examples with schema v1 and zero structural invariant violations', () => {
-    expect(BUILTIN_EXAMPLES.length).toBeGreaterThanOrEqual(2);
+  it('parses all 4 built-in examples and real systems with schema v1 and zero structural invariant violations', () => {
+    expect(BUILTIN_EXAMPLES).toHaveLength(4);
 
     for (const example of BUILTIN_EXAMPLES) {
       const parsed = parseProjectFileDtoV1(example.rawPayload);
@@ -35,13 +35,19 @@ describe('Built-in examples integrity & deterministic validation', () => {
     }
   });
 
-  it('produces zero diagnostics for hexagonalOrdersValid', () => {
-    const valid = BUILTIN_EXAMPLES.find((e) => e.id === 'hexagonal-orders-valid');
-    expect(valid).toBeDefined();
-    const parsed = parseProjectFileDtoV1(valid!.rawPayload);
-    expect(parsed.ok).toBe(true);
-    if (parsed.ok) {
-      expect(evaluateProject(parsed.value.project)).toEqual([]);
+  it('produces zero diagnostics for hexagonalOrdersValid and both real anonymized systems (G8)', () => {
+    for (const id of [
+      'hexagonal-orders-valid',
+      'real-system-api-ports-adapters',
+      'real-system-distributed-commerce',
+    ]) {
+      const model = BUILTIN_EXAMPLES.find((e) => e.id === id);
+      expect(model, `Missing example ${id}`).toBeDefined();
+      const parsed = parseProjectFileDtoV1(model!.rawPayload);
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) {
+        expect(evaluateProject(parsed.value.project), `Unexpected diagnostics in ${id}`).toEqual([]);
+      }
     }
   });
 

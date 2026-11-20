@@ -1,0 +1,440 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-11-20T16:00:00.000Z",
+  "project": {
+    "id": "real-system-distributed-commerce",
+    "name": "Sistema Real 2 — Plataforma de E-Commerce Distribuída",
+    "description": "Sistema distribuído anonimizado com serviços, PostgreSQL, Redis, Kafka, PSP externo e arquitetura interna com Boundary Binding.",
+    "ruleProfile": "hexagonal",
+    "createdAt": "2026-11-20T16:00:00.000Z",
+    "updatedAt": "2026-11-20T16:00:00.000Z",
+    "topology": {
+      "nodes": [
+        {
+          "id": "broker-kafka",
+          "name": "Kafka Event Bus",
+          "kind": "broker",
+          "description": "Eventos de domínio de checkout e expedição",
+          "technology": "Apache Kafka"
+        },
+        {
+          "id": "cache-redis",
+          "name": "Redis Cart Cache",
+          "kind": "cache",
+          "description": "Carrinhos ativos e locks de idempotência",
+          "technology": "Redis 7"
+        },
+        {
+          "id": "client-storefront",
+          "name": "Storefront SPA",
+          "kind": "client",
+          "description": "Loja web dos compradores",
+          "technology": "Vue 3"
+        },
+        {
+          "id": "db-checkout",
+          "name": "PostgreSQL Checkout",
+          "kind": "database",
+          "description": "Persistência de pedidos confirmados",
+          "technology": "PostgreSQL 16"
+        },
+        {
+          "id": "ext-psp",
+          "name": "Payment PSP",
+          "kind": "external-system",
+          "description": "Adquirente externo de cartões e PIX",
+          "technology": "REST API"
+        },
+        {
+          "id": "gw-api",
+          "name": "API Gateway",
+          "kind": "gateway",
+          "description": "Roteamento e autenticação JWT",
+          "technology": "Kong"
+        },
+        {
+          "id": "svc-catalog",
+          "name": "Catalog API",
+          "kind": "service",
+          "description": "Consulta de preços e estoque disponível",
+          "technology": "Go"
+        },
+        {
+          "id": "svc-checkout",
+          "name": "Checkout API",
+          "kind": "service",
+          "description": "Orquestra fechamento de carrinho, cobrança e publicação de evento",
+          "technology": "TypeScript"
+        },
+        {
+          "id": "svc-fulfillment",
+          "name": "Fulfillment Worker",
+          "kind": "service",
+          "description": "Consome pedidos pagos para separação logística",
+          "technology": "Go"
+        }
+      ],
+      "connections": [
+        {
+          "id": "c-chk-broker",
+          "sourceId": "svc-checkout",
+          "targetId": "broker-kafka",
+          "kind": "async-publish",
+          "protocol": "kafka",
+          "label": "checkout.paid"
+        },
+        {
+          "id": "c-chk-catalog",
+          "sourceId": "svc-checkout",
+          "targetId": "svc-catalog",
+          "kind": "sync-call",
+          "protocol": "grpc",
+          "label": "ReserveStock"
+        },
+        {
+          "id": "c-chk-db",
+          "sourceId": "svc-checkout",
+          "targetId": "db-checkout",
+          "kind": "data-access",
+          "protocol": "sql",
+          "label": "checkout_db"
+        },
+        {
+          "id": "c-chk-psp",
+          "sourceId": "svc-checkout",
+          "targetId": "ext-psp",
+          "kind": "sync-call",
+          "protocol": "http",
+          "label": "POST /charges"
+        },
+        {
+          "id": "c-chk-redis",
+          "sourceId": "svc-checkout",
+          "targetId": "cache-redis",
+          "kind": "cache-access",
+          "protocol": "redis",
+          "label": "cart:{id}"
+        },
+        {
+          "id": "c-gw-chk",
+          "sourceId": "gw-api",
+          "targetId": "svc-checkout",
+          "kind": "sync-call",
+          "protocol": "http",
+          "label": "POST /checkout"
+        },
+        {
+          "id": "c-kafka-fulfill",
+          "sourceId": "broker-kafka",
+          "targetId": "svc-fulfillment",
+          "kind": "async-consume",
+          "protocol": "kafka",
+          "label": "checkout.paid"
+        },
+        {
+          "id": "c-spa-gw",
+          "sourceId": "client-storefront",
+          "targetId": "gw-api",
+          "kind": "sync-call",
+          "protocol": "http",
+          "label": "HTTPS"
+        }
+      ]
+    },
+    "internals": {
+      "svc-checkout": {
+        "serviceId": "svc-checkout",
+        "units": [
+          {
+            "id": "u-cart-if",
+            "name": "CartStore",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de leitura/limpeza de carrinho"
+          },
+          {
+            "id": "u-catalog-grpc",
+            "name": "CatalogGrpcAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Cliente gRPC do serviço de catálogo"
+          },
+          {
+            "id": "u-catalog-if",
+            "name": "InventoryReservationPort",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de reserva de estoque"
+          },
+          {
+            "id": "u-checkout-entity",
+            "name": "CheckoutOrder",
+            "kind": "domain-entity",
+            "layer": "domain",
+            "description": "Entidade de pedido em fechamento"
+          },
+          {
+            "id": "u-complete-uc",
+            "name": "CompleteCheckout UseCase",
+            "kind": "use-case",
+            "layer": "application",
+            "description": "Fluxo principal de fechamento de pedido"
+          },
+          {
+            "id": "u-event-if",
+            "name": "CheckoutEventBus",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de publicação de eventos"
+          },
+          {
+            "id": "u-http-in",
+            "name": "CheckoutHttpAdapter",
+            "kind": "inbound-adapter",
+            "layer": "adapters",
+            "description": "Endpoint REST de checkout"
+          },
+          {
+            "id": "u-kafka-out",
+            "name": "KafkaCheckoutPublisher",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Produtor Kafka de checkout.paid"
+          },
+          {
+            "id": "u-order-repo-if",
+            "name": "CheckoutRepository",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de persistência de pedidos"
+          },
+          {
+            "id": "u-pg-out",
+            "name": "PostgresCheckoutRepo",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Implementação PostgreSQL"
+          },
+          {
+            "id": "u-psp-if",
+            "name": "PaymentGateway",
+            "kind": "interface",
+            "layer": "application",
+            "description": "Contrato de cobrança externa"
+          },
+          {
+            "id": "u-psp-out",
+            "name": "PspHttpAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Cliente HTTP do PSP"
+          },
+          {
+            "id": "u-redis-out",
+            "name": "RedisCartAdapter",
+            "kind": "outbound-adapter",
+            "layer": "adapters",
+            "description": "Adaptador Redis para carrinhos"
+          }
+        ],
+        "dependencies": [
+          {
+            "id": "d-cat-impl",
+            "sourceId": "u-catalog-grpc",
+            "targetId": "u-catalog-if",
+            "kind": "implements"
+          },
+          {
+            "id": "d-http-uc",
+            "sourceId": "u-http-in",
+            "targetId": "u-complete-uc",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-kafka-impl",
+            "sourceId": "u-kafka-out",
+            "targetId": "u-event-if",
+            "kind": "implements"
+          },
+          {
+            "id": "d-pg-impl",
+            "sourceId": "u-pg-out",
+            "targetId": "u-order-repo-if",
+            "kind": "implements"
+          },
+          {
+            "id": "d-psp-impl",
+            "sourceId": "u-psp-out",
+            "targetId": "u-psp-if",
+            "kind": "implements"
+          },
+          {
+            "id": "d-redis-impl",
+            "sourceId": "u-redis-out",
+            "targetId": "u-cart-if",
+            "kind": "implements"
+          },
+          {
+            "id": "d-uc-cart",
+            "sourceId": "u-complete-uc",
+            "targetId": "u-cart-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-uc-cat",
+            "sourceId": "u-complete-uc",
+            "targetId": "u-catalog-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-uc-entity",
+            "sourceId": "u-complete-uc",
+            "targetId": "u-checkout-entity",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-uc-event",
+            "sourceId": "u-complete-uc",
+            "targetId": "u-event-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-uc-psp",
+            "sourceId": "u-complete-uc",
+            "targetId": "u-psp-if",
+            "kind": "depends-on"
+          },
+          {
+            "id": "d-uc-repo",
+            "sourceId": "u-complete-uc",
+            "targetId": "u-order-repo-if",
+            "kind": "depends-on"
+          }
+        ]
+      },
+      "svc-fulfillment": {
+        "serviceId": "svc-fulfillment",
+        "units": [
+          {
+            "id": "u-fulfill-consumer",
+            "name": "KafkaPaidOrderConsumer",
+            "kind": "inbound-adapter",
+            "layer": "adapters",
+            "description": "Consumidor Kafka de checkout.paid"
+          },
+          {
+            "id": "u-fulfill-uc",
+            "name": "StartFulfillment UseCase",
+            "kind": "use-case",
+            "layer": "application",
+            "description": "Inicia separação e despacho do pedido"
+          }
+        ],
+        "dependencies": [
+          {
+            "id": "d-fulfill-in-uc",
+            "sourceId": "u-fulfill-consumer",
+            "targetId": "u-fulfill-uc",
+            "kind": "depends-on"
+          }
+        ]
+      }
+    },
+    "bindings": [
+      {
+        "id": "b-chk-cat",
+        "serviceId": "svc-checkout",
+        "runtimeConnectionId": "c-chk-catalog",
+        "adapterUnitId": "u-catalog-grpc"
+      },
+      {
+        "id": "b-chk-db",
+        "serviceId": "svc-checkout",
+        "runtimeConnectionId": "c-chk-db",
+        "adapterUnitId": "u-pg-out"
+      },
+      {
+        "id": "b-chk-in",
+        "serviceId": "svc-checkout",
+        "runtimeConnectionId": "c-gw-chk",
+        "adapterUnitId": "u-http-in"
+      },
+      {
+        "id": "b-chk-kafka",
+        "serviceId": "svc-checkout",
+        "runtimeConnectionId": "c-chk-broker",
+        "adapterUnitId": "u-kafka-out"
+      },
+      {
+        "id": "b-chk-psp",
+        "serviceId": "svc-checkout",
+        "runtimeConnectionId": "c-chk-psp",
+        "adapterUnitId": "u-psp-out"
+      },
+      {
+        "id": "b-chk-redis",
+        "serviceId": "svc-checkout",
+        "runtimeConnectionId": "c-chk-redis",
+        "adapterUnitId": "u-redis-out"
+      },
+      {
+        "id": "b-fulfill-in",
+        "serviceId": "svc-fulfillment",
+        "runtimeConnectionId": "c-kafka-fulfill",
+        "adapterUnitId": "u-fulfill-consumer"
+      }
+    ],
+    "views": [
+      {
+        "id": "view-int-checkout",
+        "scope": {
+          "level": "internal",
+          "serviceId": "svc-checkout"
+        },
+        "nodePositions": {
+          "u-cart-if": { "x": 620, "y": 140 },
+          "u-catalog-grpc": { "x": 920, "y": 240 },
+          "u-catalog-if": { "x": 620, "y": 240 },
+          "u-checkout-entity": { "x": 620, "y": 40 },
+          "u-complete-uc": { "x": 320, "y": 240 },
+          "u-event-if": { "x": 620, "y": 540 },
+          "u-http-in": { "x": 40, "y": 240 },
+          "u-kafka-out": { "x": 920, "y": 540 },
+          "u-order-repo-if": { "x": 620, "y": 340 },
+          "u-pg-out": { "x": 920, "y": 340 },
+          "u-psp-if": { "x": 620, "y": 440 },
+          "u-psp-out": { "x": 920, "y": 440 },
+          "u-redis-out": { "x": 920, "y": 140 }
+        }
+      },
+      {
+        "id": "view-int-fulfillment",
+        "scope": {
+          "level": "internal",
+          "serviceId": "svc-fulfillment"
+        },
+        "nodePositions": {
+          "u-fulfill-consumer": { "x": 60, "y": 120 },
+          "u-fulfill-uc": { "x": 360, "y": 120 }
+        }
+      },
+      {
+        "id": "view-system",
+        "scope": {
+          "level": "system"
+        },
+        "nodePositions": {
+          "broker-kafka": { "x": 900, "y": 440 },
+          "cache-redis": { "x": 900, "y": 240 },
+          "client-storefront": { "x": 40, "y": 220 },
+          "db-checkout": { "x": 900, "y": 140 },
+          "ext-psp": { "x": 900, "y": 340 },
+          "gw-api": { "x": 320, "y": 220 },
+          "svc-catalog": { "x": 900, "y": 40 },
+          "svc-checkout": { "x": 600, "y": 220 },
+          "svc-fulfillment": { "x": 1180, "y": 440 }
+        }
+      }
+    ]
+  }
+}
