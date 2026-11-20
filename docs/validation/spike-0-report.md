@@ -105,4 +105,4 @@ A spike revelou 4 detalhes concretos da versão `2.0.2` que devem ser seguidos n
 
 ## 5. Aprovação do Portão (Fatia 0 → Fatia 1)
 
-*   [ ] **Aprovação do autor:** confirmar **GO** para `@xyflow/vue` `^2.0.2` (com `setupVueFlow()` + `NodeChangeset.applyTo()`) e `@dagrejs/dagre` `^3.1.3` (sem Web Worker) e autorizar o início da **Fatia 1**.
+*   [x] **Aprovação do autor:** confirmar **GO** para `@xyflow/vue` `^2.0.2` (com `setupVueFlow()` + `NodeChangeset.applyTo()`) e `@dagrejs/dagre` `^3.1.3` (sem Web Worker) e autorizar o início da **Fatia 1**.
