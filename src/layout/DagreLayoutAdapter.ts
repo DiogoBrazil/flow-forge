@@ -18,15 +18,22 @@ export class DagreLayoutAdapter implements LayoutPort {
     const graph = new dagre.graphlib.Graph();
     graph.setGraph({
       rankdir: 'LR',
-      nodesep: 56,
-      ranksep: 96,
-      marginx: 40,
-      marginy: 40,
+      nodesep: 92,
+      ranksep: 190,
+      edgesep: 36,
+      marginx: 48,
+      marginy: 48,
     });
     graph.setDefaultEdgeLabel(() => ({}));
 
+    const paddingX = 20;
+    const paddingY = 28;
+
     for (const node of input.nodes) {
-      graph.setNode(node.id, { width: node.width, height: node.height });
+      graph.setNode(node.id, {
+        width: node.width + paddingX,
+        height: node.height + paddingY,
+      });
     }
     for (const edge of input.edges) {
       graph.setEdge(edge.sourceId, edge.targetId);

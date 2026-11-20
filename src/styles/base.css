@@ -45,6 +45,15 @@
   --ff-success: light-dark(#059669, #34d399);
   --ff-success-bg: light-dark(#ecfdf5, rgba(16, 185, 129, 0.14));
 
+  /* Adaptive edge colors (high contrast in both Light and Dark modes) */
+  --ff-edge-sync: light-dark(#1e293b, #cbd5e1);
+  --ff-edge-data: light-dark(#0369a1, #38bdf8);
+  --ff-edge-cache: light-dark(#0d9488, #2dd4bf);
+  --ff-edge-async-pub: light-dark(#7c3aed, #a78bfa);
+  --ff-edge-async-con: light-dark(#9333ea, #c084fc);
+  --ff-edge-depends: light-dark(#475569, #94a3b8);
+  --ff-edge-implements: light-dark(#059669, #34d399);
+
   --ff-radius-sm: 6px;
   --ff-radius-md: 10px;
   --ff-radius-lg: 14px;
@@ -185,19 +194,36 @@ dialog.ff-dialog::backdrop {
   backdrop-filter: blur(3px);
 }
 
-/* Vue Flow dark/light integration */
+/* Vue Flow dark/light integration & generous control sizing */
 .vue-flow__controls {
-  border: 1px solid var(--ff-border);
+  border: 1px solid var(--ff-border-strong);
   border-radius: var(--ff-radius-md);
   overflow: hidden;
-  box-shadow: var(--ff-shadow-sm);
+  box-shadow: var(--ff-shadow-md);
+  background: var(--ff-surface-elevated);
 }
 
 .vue-flow__controls-button {
-  background: var(--ff-surface);
-  border-bottom-color: var(--ff-border);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--ff-border);
+  border-radius: 0;
+  background: var(--ff-surface-elevated);
   color: var(--ff-text);
   fill: var(--ff-text);
+}
+
+.vue-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.vue-flow__controls-button svg {
+  width: 16px;
+  height: 16px;
+  max-width: 16px;
+  max-height: 16px;
 }
 
 .vue-flow__controls-button:hover {
@@ -205,7 +231,9 @@ dialog.ff-dialog::backdrop {
 }
 
 .vue-flow__edge-textbg {
-  fill: var(--ff-surface) !important;
+  fill: var(--ff-surface-elevated) !important;
+  stroke: var(--ff-border);
+  stroke-width: 0.75px;
 }
 
 .vue-flow__edge-text {

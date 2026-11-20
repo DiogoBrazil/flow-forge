@@ -3,8 +3,8 @@ import type { ArchitectureProject, EntityId, ViewScope } from '@domain/types';
 import type { LayoutGraphEdgeInput, LayoutGraphNodeInput, LayoutPort } from '../ports/LayoutPort';
 import type { WorkspaceSession } from './sessionState';
 
-export const DEFAULT_LAYOUT_NODE_WIDTH = 220;
-export const DEFAULT_LAYOUT_NODE_HEIGHT = 84;
+export const DEFAULT_LAYOUT_NODE_WIDTH = 240;
+export const DEFAULT_LAYOUT_NODE_HEIGHT = 112;
 
 export interface ApplyViewLayoutDeps {
   readonly layoutPort: LayoutPort;

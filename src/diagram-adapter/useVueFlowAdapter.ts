@@ -22,44 +22,44 @@ function toFlowEdge(edge: DiagramEdgeViewModel): Edge {
   const isError = edge.diagnosticSeverity === 'error';
   const isWarning = edge.diagnosticSeverity === 'warning';
 
-  let stroke = '#334155';
+  let stroke = 'var(--ff-edge-sync)';
   let strokeDasharray: string | undefined;
   let markerEndType = MarkerType.ArrowClosed;
 
   const styleKind: DiagramEdgeStyleKind = edge.styleKind;
   switch (styleKind) {
     case 'sync-call':
-      stroke = '#0f172a';
+      stroke = 'var(--ff-edge-sync)';
       break;
     case 'data-access':
-      stroke = '#0369a1';
+      stroke = 'var(--ff-edge-data)';
       break;
     case 'cache-access':
-      stroke = '#0d9488';
+      stroke = 'var(--ff-edge-cache)';
       break;
     case 'async-publish':
-      stroke = '#7c3aed';
+      stroke = 'var(--ff-edge-async-pub)';
       strokeDasharray = '6 4';
       break;
     case 'async-consume':
-      stroke = '#9333ea';
+      stroke = 'var(--ff-edge-async-con)';
       strokeDasharray = '6 4';
       break;
     case 'depends-on':
-      stroke = '#475569';
+      stroke = 'var(--ff-edge-depends)';
       markerEndType = MarkerType.Arrow;
       break;
     case 'implements':
-      stroke = '#059669';
+      stroke = 'var(--ff-edge-implements)';
       strokeDasharray = '2 4';
       markerEndType = MarkerType.ArrowClosed;
       break;
   }
 
   if (isError) {
-    stroke = '#dc2626';
+    stroke = 'var(--ff-error)';
   } else if (isWarning) {
-    stroke = '#d97706';
+    stroke = 'var(--ff-warning)';
   }
 
   return {
@@ -74,14 +74,16 @@ function toFlowEdge(edge: DiagramEdgeViewModel): Edge {
       ...(strokeDasharray !== undefined ? { strokeDasharray } : {}),
     },
     labelStyle: {
-      fill: '#0f172a',
+      fill: 'var(--ff-text)',
       fontSize: '11px',
       fontWeight: 600,
     },
     labelBgStyle: {
-      fill: '#f8fafc',
-      fillOpacity: 0.92,
+      fill: 'var(--ff-surface-elevated)',
+      fillOpacity: 0.94,
     },
+    labelBgPadding: [6, 3],
+    labelBgBorderRadius: 4,
     markerEnd: {
       type: markerEndType,
       color: stroke,
