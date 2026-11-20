@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { createProjectFromExample } from '@application/use-cases/projectLifecycle';
+import { createWorkspaceSession } from '@application/use-cases/sessionState';
 import { validateStructuralInvariants } from '@domain/invariants';
 import { BUILTIN_EXAMPLES } from '@examples/index';
 import { evaluateProject } from '@rules/evaluateProject';
 import { parseProjectFileDtoV1 } from '@schemas/projectFileV1';
+import { InMemoryProjectRepository } from '../../fakes/InMemoryProjectRepository';
 
 const ALL_NINE_RULE_IDS = [
   'BOUNDARY_DIRECTION_MISMATCH',
@@ -56,6 +59,16 @@ describe('Built-in examples integrity & deterministic validation', () => {
       const firstWarningIdx = diags.findIndex((d) => d.severity === 'warning');
       const lastErrorIdx = diags.map((d) => d.severity).lastIndexOf('error');
       expect(lastErrorIdx).toBeLessThan(firstWarningIdx);
+    }
+  });
+
+  it('imports all built-in examples cleanly via createProjectFromExample use case', async () => {
+    const repo = new InMemoryProjectRepository();
+    const session = createWorkspaceSession();
+
+    for (const example of BUILTIN_EXAMPLES) {
+      const res = await createProjectFromExample({ projectRepo: repo, session }, example.id);
+      expect(res.ok, `createProjectFromExample("${example.id}") failed`).toBe(true);
     }
   });
 });

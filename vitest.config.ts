@@ -50,6 +50,12 @@ export default mergeConfig(
             branches: 85,
             statements: 90,
           },
+          'src/application/**': {
+            lines: 85,
+            functions: 85,
+            branches: 75,
+            statements: 85,
+          },
         },
       },
     },
